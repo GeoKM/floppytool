@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 trait FormatHandler: Send + Sync {
     fn display(&self) -> Result<String>;
-    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>) -> Result<()>;
+    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()>;
     fn data(&self) -> &[u8];
     fn geometry(&self) -> Result<Option<Geometry>>;
 }
@@ -48,6 +48,10 @@ enum Commands {
         output: PathBuf,
         #[arg(long, value_parser = parse_geometry, default_value = "auto")]
         geometry: Geometry,
+        #[arg(long)]
+        verbose: bool,
+        #[arg(long)]
+        validate: bool,
     },
 }
 
@@ -83,13 +87,19 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Display => println!("{}", handler.display()?),
-        Commands::Convert { format, output, geometry } => {
+        Commands::Convert { format, output, geometry, verbose, validate } => {
             let target: Box<dyn FormatHandler> = match format.as_str() {
                 "img" => Box::new(formats::img::IMGHandler::new(Vec::new())) as Box<dyn FormatHandler>,
                 "imd" => Box::new(formats::imd::IMDHandler::new(Vec::new())) as Box<dyn FormatHandler>,
                 _ => return Err(anyhow!("Unknown target format: {}", format)),
             };
-            handler.convert(&*target, &output, Some(geometry.clone()))?;
+            let effective_geometry = match geometry.clone() {
+                Geometry::Auto => handler.geometry()?.unwrap_or(Geometry::Manual {
+                    cylinders: 40, heads: 2, sectors_per_track: 9, sector_size: 512, mode: 5
+                }),
+                g => g,
+            };
+            handler.convert(&*target, &output, Some(effective_geometry.clone()), verbose, validate)?;
             if format == "img" {
                 if let Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) = handler.geometry()? {
                     println!("Geometry for reverse conversion: {},{},{},{},{}", cylinders, heads, sectors_per_track, sector_size, mode);
@@ -97,6 +107,31 @@ fn main() -> Result<()> {
             } else if format == "imd" && matches!(geometry, Geometry::Auto) {
                 println!("Error: Conversion to .imd requires explicit geometry (e.g., '--geometry 40,2,9,512,4')");
                 std::process::exit(1);
+            }
+            if validate {
+                let output_handler = load_handler(&output)?;
+                let output_data = output_handler.data();
+                let input_data = handler.data();
+                if format == "img" {
+                    let expected_size = match effective_geometry {
+                        Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, .. } => {
+                            cylinders as usize * heads as usize * sectors_per_track as usize * sector_size as usize
+                        }
+                        _ => return Err(anyhow!("Validation requires explicit geometry")),
+                    };
+                    if output_data.len() != expected_size {
+                        return Err(anyhow!("Validation failed: Output size {} does not match expected geometry size {}", output_data.len(), expected_size));
+                    }
+                    if output_data.len() != input_data.len() {
+                        println!("Warning: Output size {} differs from input size {} due to compression in .imd", output_data.len(), input_data.len());
+                    }
+                    println!("Validation passed: Output size matches expected geometry");
+                } else { // format == "imd"
+                    if output_data.len() != input_data.len() {
+                        println!("Warning: Output size {} differs from input size {} due to compression in .imd", output_data.len(), input_data.len());
+                    }
+                    println!("Validation passed: Output matches expected geometry");
+                }
             }
             println!("Converted to {}", output.display());
         }

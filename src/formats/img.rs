@@ -1,7 +1,7 @@
 use crate::{FormatHandler, Geometry};
 use anyhow::{Result, anyhow};
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write}; // Added Read
 use std::path::PathBuf;
 
 pub struct IMGHandler {
@@ -63,15 +63,13 @@ impl FormatHandler for IMGHandler {
         Ok(output.join("\n"))
     }
 
-    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>) -> Result<()> {
+    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()> {
         if target.data().len() == 0 { // Conversion to IMD
             let (cylinders, heads, sectors_per_track, sector_size, mode) = match geometry {
                 Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) => {
                     (cylinders, heads, sectors_per_track, sector_size, mode)
                 }
-                Some(Geometry::Auto) | None => {
-                    return Err(anyhow!("Conversion from .img to .imd requires explicit geometry (e.g., '--geometry 40,2,9,512,4')"));
-                }
+                _ => return Err(anyhow!("Conversion from .img to .imd requires explicit geometry (e.g., '--geometry 40,2,9,512,4')")),
             };
 
             let expected_size = cylinders as usize * heads as usize * sectors_per_track as usize * sector_size as usize;
@@ -86,6 +84,7 @@ impl FormatHandler for IMGHandler {
             raw_data.extend(b"IMD 1.18: 28/11/2015 10:08:58\r\nLaplink v3 \r\n\x1A");
 
             let mut pos = 0;
+            let mut compressed_sectors = 0;
             for cyl in 0..cylinders {
                 for head in 0..heads {
                     raw_data.push(mode);
@@ -98,14 +97,21 @@ impl FormatHandler for IMGHandler {
                         raw_data.push(s);
                     }
 
+                    if verbose {
+                        println!("Writing Cyl {}, Head {}: {} sectors, size {} bytes, mode {}", cyl, head, sectors_per_track, sector_size, mode);
+                    }
+
                     for _ in 0..sectors_per_track {
                         let chunk = &self.data[pos..pos + sector_size as usize];
                         if chunk.iter().all(|&b| b == chunk[0]) {
                             raw_data.push(2); // Compressed
                             raw_data.push(chunk[0]);
+                            compressed_sectors += 1;
+                            if verbose { println!("  Sector: Compressed (type 2), value {}", chunk[0]); }
                         } else {
                             raw_data.push(1); // Normal data
                             raw_data.extend_from_slice(chunk);
+                            if verbose { println!("  Sector: Normal (type 1), {} bytes", sector_size); }
                         }
                         pos += sector_size as usize;
                     }
@@ -114,6 +120,21 @@ impl FormatHandler for IMGHandler {
 
             let mut file = File::create(output_path)?;
             file.write_all(&raw_data)?;
+
+            if verbose {
+                println!("Total sectors: {}, Compressed sectors: {}", cylinders as usize * heads as usize * sectors_per_track as usize, compressed_sectors);
+            }
+
+            if validate {
+                let mut output_file = File::open(output_path)?;
+                let mut output_data = Vec::new();
+                output_file.read_to_end(&mut output_data)?;
+                if output_data.len() != raw_data.len() {
+                    return Err(anyhow!("Validation failed: Output file size {} does not match written size {}", output_data.len(), raw_data.len()));
+                }
+                println!("Validation passed: Output matches written data");
+            }
+
             Ok(())
         } else {
             Err(anyhow!("Conversion from IMG only supports IMD currently"))

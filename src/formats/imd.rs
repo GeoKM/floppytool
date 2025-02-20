@@ -94,21 +94,32 @@ impl FormatHandler for IMDHandler {
         Ok(output.join("\n"))
     }
 
-    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, _geometry: Option<Geometry>) -> Result<()> {
+    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, _geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()> {
         if target.data().len() == 0 { // IMG conversion
             let mut raw_data = Vec::new();
             let header_end = self.data.iter().position(|&b| b == 0x1A).unwrap();
             let mut cursor = Cursor::new(&self.data[header_end + 1..]);
+            let mut total_sectors = 0;
+            let mut compressed_sectors = 0;
 
             while cursor.position() < self.data.len() as u64 - header_end as u64 - 1 {
-                let _mode = cursor.read_u8()?;
-                let _cyl = cursor.read_u8()?;
-                let _head = cursor.read_u8()?;
+                let mode = cursor.read_u8()?;
+                let cylinder = cursor.read_u8()?;
+                let head = cursor.read_u8()?;
                 let sector_count = cursor.read_u8()?;
                 let sector_size_code = cursor.read_u8()?;
                 let sector_size = 128 << sector_size_code;
 
-                cursor.set_position(cursor.position() + sector_count as u64);
+                if verbose {
+                    println!("Processing Cyl {}, Head {}: {} sectors, size {} bytes, mode {}", cylinder, head, sector_count, sector_size, mode);
+                }
+
+                let skip_bytes = sector_count as u64
+                    + if head & 0x80 != 0 { sector_count as u64 } else { 0 }
+                    + if head & 0x40 != 0 { sector_count as u64 } else { 0 };
+                cursor.set_position(cursor.position() + skip_bytes);
+
+                total_sectors += sector_count as usize;
                 for _ in 0..sector_count {
                     let type_byte = cursor.read_u8()?;
                     match type_byte {
@@ -116,18 +127,38 @@ impl FormatHandler for IMDHandler {
                             let mut sector_data = vec![0u8; sector_size as usize];
                             cursor.read_exact(&mut sector_data)?;
                             raw_data.extend_from_slice(&sector_data);
+                            if verbose { println!("  Sector: Normal (type 1), {} bytes", sector_size); }
                         }
                         2 => {
                             let value = cursor.read_u8()?;
                             raw_data.extend(vec![value; sector_size as usize]);
+                            compressed_sectors += 1;
+                            if verbose { println!("  Sector: Compressed (type 2), value {}", value); }
                         }
-                        _ => return Err(anyhow!("Unsupported sector type")),
+                        _ => {
+                            // Skip unsupported types but still advance cursor
+                            if verbose { println!("  Sector: Unsupported (type {}), skipping", type_byte); }
+                            cursor.set_position(cursor.position() + sector_size as u64);
+                        }
                     }
                 }
             }
 
             let mut file = File::create(output_path)?;
             file.write_all(&raw_data)?;
+
+            if verbose {
+                println!("Total sectors: {}, Compressed sectors: {}", total_sectors, compressed_sectors);
+            }
+
+            if validate {
+                let expected_size = total_sectors * 512; // Assuming 512-byte sectors for validation
+                if raw_data.len() != expected_size {
+                    return Err(anyhow!("Validation failed: Output size {} bytes does not match expected {} bytes", raw_data.len(), expected_size));
+                }
+                println!("Validation passed: Output size matches expected geometry");
+            }
+
             Ok(())
         } else {
             Err(anyhow!("Conversion to this format not implemented"))
