@@ -25,12 +25,10 @@ The executable will be at target/release/floppytool.
 Usage
 
 Run commands from the project root with the built binary.
-Display Disk Information
+Display Disk Information:
 
-    Basic geometry:
-    bash
-
-./target/release/floppytool --input LAPLINK3.IMD display
+   ./target/release/floppytool --input LAPLINK3.IMD display
+   
 With ASCII sector data (first 32 bytes):
 bash
 
