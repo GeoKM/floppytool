@@ -15,6 +15,11 @@ A command-line utility for converting and inspecting floppy disk images, support
    git clone <your-repo-url-here>
    cd floppytool
 3. Build the release binary:
-   bash
-cargo build --release
 
+
+Usage
+
+Run commands from the project root with the built binary.
+Display Disk Information
+
+    Basic geometry:
