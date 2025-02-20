@@ -12,6 +12,47 @@ pub struct IMDHandler {
 
 impl IMDHandler {
     pub fn new(data: Vec<u8>) -> Self { IMDHandler { data } }
+
+    fn analyze_geometry(&self) -> Result<(u8, u8, u8, u16, u8)> {
+        let header_end = self.data.iter().position(|&b| b == 0x1A)
+            .ok_or_else(|| anyhow!("No header terminator found"))?;
+        let mut cursor = Cursor::new(&self.data[header_end + 1..]);
+        let mut max_cyl = 0;
+        let mut max_head = 0;
+        let mut sectors_per_track = 0;
+        let mut sector_size = 0;
+        let mut mode = 0;
+
+        while cursor.position() < self.data.len() as u64 - header_end as u64 - 1 {
+            let track_mode = cursor.read_u8()?;
+            let cylinder = cursor.read_u8()?;
+            let head = cursor.read_u8()?;
+            let sector_count = cursor.read_u8()?;
+            let sector_size_code = cursor.read_u8()?;
+            let size = 128 << sector_size_code;
+
+            max_cyl = max_cyl.max(cylinder + 1);
+            max_head = max_head.max(head + 1);
+            if sectors_per_track == 0 { sectors_per_track = sector_count; }
+            if sector_size == 0 { sector_size = size; }
+            if mode == 0 { mode = track_mode; }
+
+            let skip_bytes = sector_count as u64
+                + if head & 0x80 != 0 { sector_count as u64 } else { 0 }
+                + if head & 0x40 != 0 { sector_count as u64 } else { 0 };
+            cursor.set_position(cursor.position() + skip_bytes);
+
+            for _ in 0..sector_count {
+                let type_byte = cursor.read_u8()?;
+                match type_byte {
+                    1 => cursor.set_position(cursor.position() + size as u64),
+                    2 => cursor.set_position(cursor.position() + 1),
+                    _ => return Err(anyhow!("Unsupported sector type: {}", type_byte)),
+                }
+            }
+        }
+        Ok((max_cyl, max_head, sectors_per_track, sector_size, mode))
+    }
 }
 
 impl FormatHandler for IMDHandler {
@@ -74,7 +115,7 @@ impl FormatHandler for IMDHandler {
                         1 => {
                             let mut sector_data = vec![0u8; sector_size as usize];
                             cursor.read_exact(&mut sector_data)?;
-                            raw_data.extend_from_slice(&sector_data); // Fixed typo: §or_data -> sector_data
+                            raw_data.extend_from_slice(&sector_data);
                         }
                         2 => {
                             let value = cursor.read_u8()?;
@@ -91,6 +132,11 @@ impl FormatHandler for IMDHandler {
         } else {
             Err(anyhow!("Conversion to this format not implemented"))
         }
+    }
+
+    fn geometry(&self) -> Result<Option<Geometry>> {
+        let (cylinders, heads, sectors_per_track, sector_size, mode) = self.analyze_geometry()?;
+        Ok(Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }))
     }
 
     fn data(&self) -> &[u8] { &self.data }

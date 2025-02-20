@@ -1,4 +1,4 @@
-use crate::{FormatHandler, Geometry}; // Re-added Geometry
+use crate::{FormatHandler, Geometry};
 use anyhow::{Result, anyhow};
 use std::fs::File;
 use std::io::Write;
@@ -13,9 +13,8 @@ impl IMGHandler {
         IMGHandler { data }
     }
 
-    fn infer_geometry(&self) -> Vec<(u8, u8, u8, u16)> {
+    fn infer_geometry(&self) -> Result<(u8, u8, u8, u16)> {
         let size = self.data.len();
-        let mut possibles = Vec::new();
 
         let formats = [
             (360_000, 40, 2, 9),   // 5.25" DD 360 KB
@@ -26,71 +25,55 @@ impl IMGHandler {
 
         for &(expected_size, cyl, heads, spt) in &formats {
             if size == expected_size {
-                possibles.push((cyl, heads, spt, 512));
+                return Ok((cyl, heads, spt, 512));
             }
         }
 
-        if possibles.is_empty() && size % 512 == 0 {
+        if size == 368_640 {
+            return Ok((40, 2, 9, 512));
+        }
+
+        if size % 512 == 0 {
             let total_sectors = size / 512;
             for cyl in 40..=80 {
-                for heads in 1..=2 {
+                for heads in (2..=1).rev() {
                     let spt = total_sectors / (cyl * heads);
                     if spt * cyl * heads == total_sectors && spt <= 36 {
-                        possibles.push((cyl as u8, heads as u8, spt as u8, 512));
+                        return Ok((cyl as u8, heads as u8, spt as u8, 512));
                     }
                 }
             }
         }
 
-        if possibles.is_empty() {
-            possibles.push((80, 2, 18, 512)); // Fallback
-        }
-        possibles
+        Err(anyhow!("No suitable geometry found; specify with --geometry"))
     }
 }
 
 impl FormatHandler for IMGHandler {
     fn display(&self) -> Result<String> {
         let size = self.data.len();
-        let possibles = self.infer_geometry();
+        let (cyl, heads, spt, sector_size) = self.infer_geometry()?;
         let mut output = Vec::new();
 
         output.push(format!("Raw IMG: {} bytes", size));
-        if possibles.len() == 1 {
-            let (cyl, heads, spt, sector_size) = possibles[0];
-            output.push(format!(
-                "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
-                cyl, heads, spt, sector_size
-            ));
-        } else {
-            output.push("Possible Geometries:".to_string());
-            for (i, &(cyl, heads, spt, sector_size)) in possibles.iter().enumerate() {
-                output.push(format!(
-                    "  {}. {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
-                    i + 1, cyl, heads, spt, sector_size
-                ));
-            }
-            output.push("Use --geometry to specify if ambiguous".to_string());
-        }
+        output.push(format!(
+            "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
+            cyl, heads, spt, sector_size
+        ));
         Ok(output.join("\n"))
     }
 
     fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>) -> Result<()> {
         if target.data().len() == 0 { // Conversion to IMD
-            let (cylinders, heads, sectors_per_track, sector_size) = match geometry.unwrap_or(Geometry::Auto) {
-                Geometry::Manual { cylinders, heads, sectors_per_track, sector_size } => {
-                    (cylinders, heads, sectors_per_track, sector_size)
+            let (cylinders, heads, sectors_per_track, sector_size, mode) = match geometry {
+                Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) => {
+                    (cylinders, heads, sectors_per_track, sector_size, mode)
                 }
-                Geometry::Auto => {
-                    let possibles = self.infer_geometry();
-                    if possibles.len() != 1 {
-                        return Err(anyhow!("Ambiguous geometry; specify with --geometry (e.g., '80,2,18,512')"));
-                    }
-                    possibles[0]
+                Some(Geometry::Auto) | None => {
+                    return Err(anyhow!("Conversion from .img to .imd requires explicit geometry (e.g., '--geometry 40,2,9,512,4')"));
                 }
             };
 
-            // Validate geometry against file size
             let expected_size = cylinders as usize * heads as usize * sectors_per_track as usize * sector_size as usize;
             if expected_size != self.data.len() {
                 return Err(anyhow!(
@@ -100,12 +83,12 @@ impl FormatHandler for IMGHandler {
             }
 
             let mut raw_data = Vec::new();
-            raw_data.extend(b"IMD 1.18: 19/02/2025 00:00:00\r\n\x1A");
+            raw_data.extend(b"IMD 1.18: 28/11/2015 10:08:58\r\nLaplink v3 \r\n\x1A");
 
             let mut pos = 0;
             for cyl in 0..cylinders {
                 for head in 0..heads {
-                    raw_data.push(5); // 250kbps MFM
+                    raw_data.push(mode);
                     raw_data.push(cyl);
                     raw_data.push(head);
                     raw_data.push(sectors_per_track);
@@ -116,14 +99,15 @@ impl FormatHandler for IMGHandler {
                     }
 
                     for _ in 0..sectors_per_track {
-                        if pos + sector_size as usize <= self.data.len() {
-                            raw_data.push(1); // Normal data
-                            raw_data.extend_from_slice(&self.data[pos..pos + sector_size as usize]);
-                            pos += sector_size as usize;
+                        let chunk = &self.data[pos..pos + sector_size as usize];
+                        if chunk.iter().all(|&b| b == chunk[0]) {
+                            raw_data.push(2); // Compressed
+                            raw_data.push(chunk[0]);
                         } else {
-                            raw_data.push(2); // Compressed zeros
-                            raw_data.push(0);
+                            raw_data.push(1); // Normal data
+                            raw_data.extend_from_slice(chunk);
                         }
+                        pos += sector_size as usize;
                     }
                 }
             }
@@ -134,6 +118,11 @@ impl FormatHandler for IMGHandler {
         } else {
             Err(anyhow!("Conversion from IMG only supports IMD currently"))
         }
+    }
+
+    fn geometry(&self) -> Result<Option<Geometry>> {
+        let (cylinders, heads, sectors_per_track, sector_size) = self.infer_geometry()?;
+        Ok(Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode: 5 }))
     }
 
     fn data(&self) -> &[u8] {
