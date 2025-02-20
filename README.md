@@ -14,6 +14,7 @@ A command-line utility for converting and inspecting floppy disk images, support
    ```bash
    git clone <your-repo-url-here>
    cd floppytool
-   3. Build the release binary:
-bash
+3. Build the release binary:
+   bash
 cargo build --release
+
