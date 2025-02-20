@@ -5,7 +5,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 trait FormatHandler: Send + Sync {
-    fn display(&self) -> Result<String>;
+    fn display(&self, ascii: bool) -> Result<String>;
     fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()>;
     fn data(&self) -> &[u8];
     fn geometry(&self) -> Result<Option<Geometry>>;
@@ -40,7 +40,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Display,
+    Display {
+        #[arg(long)]
+        ascii: bool,
+    },
     Convert {
         #[arg(long)]
         format: String,
@@ -86,7 +89,7 @@ fn main() -> Result<()> {
     let handler = load_handler(&cli.input)?;
 
     match cli.command {
-        Commands::Display => println!("{}", handler.display()?),
+        Commands::Display { ascii } => println!("{}", handler.display(ascii)?),
         Commands::Convert { format, output, geometry, verbose, validate } => {
             let target: Box<dyn FormatHandler> = match format.as_str() {
                 "img" => Box::new(formats::img::IMGHandler::new(Vec::new())) as Box<dyn FormatHandler>,
@@ -126,7 +129,7 @@ fn main() -> Result<()> {
                         println!("Warning: Output size {} differs from input size {} due to compression in .imd", output_data.len(), input_data.len());
                     }
                     println!("Validation passed: Output size matches expected geometry");
-                } else { // format == "imd"
+                } else {
                     if output_data.len() != input_data.len() {
                         println!("Warning: Output size {} differs from input size {} due to compression in .imd", output_data.len(), input_data.len());
                     }

@@ -1,7 +1,7 @@
 use crate::{FormatHandler, Geometry};
 use anyhow::{Result, anyhow};
 use std::fs::File;
-use std::io::{Read, Write}; // Added Read
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 pub struct IMGHandler {
@@ -50,16 +50,36 @@ impl IMGHandler {
 }
 
 impl FormatHandler for IMGHandler {
-    fn display(&self) -> Result<String> {
+    fn display(&self, ascii: bool) -> Result<String> {
         let size = self.data.len();
-        let (cyl, heads, spt, sector_size) = self.infer_geometry()?;
+        let (cylinders, heads, sectors_per_track, sector_size) = self.infer_geometry()?;
         let mut output = Vec::new();
 
         output.push(format!("Raw IMG: {} bytes", size));
-        output.push(format!(
-            "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
-            cyl, heads, spt, sector_size
-        ));
+        if !ascii {
+            output.push(format!(
+                "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
+                cylinders, heads, sectors_per_track, sector_size
+            ));
+        } else {
+            let mut pos = 0;
+            for cyl in 0..cylinders {
+                for head in 0..heads {
+                    for sector in 1..=sectors_per_track {
+                        let chunk = &self.data[pos..pos + sector_size as usize];
+                        let ascii_str: String = chunk.iter()
+                            .take(32)
+                            .map(|&b| if b >= 32 && b <= 126 { b as char } else { '.' })
+                            .collect();
+                        output.push(format!(
+                            "Cyl {}, Head {}, Sector {}, Size {} bytes: {}",
+                            cyl, head, sector, sector_size, ascii_str
+                        ));
+                        pos += sector_size as usize;
+                    }
+                }
+            }
+        }
         Ok(output.join("\n"))
     }
 

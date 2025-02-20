@@ -56,7 +56,7 @@ impl IMDHandler {
 }
 
 impl FormatHandler for IMDHandler {
-    fn display(&self) -> Result<String> {
+    fn display(&self, ascii: bool) -> Result<String> {
         let mut output = Vec::new();
         let header_end = self.data.iter().position(|&b| b == 0x1A)
             .ok_or_else(|| anyhow!("No header terminator found"))?;
@@ -65,29 +65,48 @@ impl FormatHandler for IMDHandler {
 
         let mut cursor = Cursor::new(&self.data[header_end + 1..]);
         while cursor.position() < self.data.len() as u64 - header_end as u64 - 1 {
-            let _mode = cursor.read_u8()?;
+            let mode = cursor.read_u8()?;
             let cylinder = cursor.read_u8()?;
             let head = cursor.read_u8()?;
             let sector_count = cursor.read_u8()?;
             let sector_size_code = cursor.read_u8()?;
             let sector_size = 128 << sector_size_code;
 
-            output.push(format!(
-                "Cyl {}, Head {}: {} sectors, size {} bytes",
-                cylinder, head, sector_count, sector_size
-            ));
+            if !ascii {
+                output.push(format!(
+                    "Cyl {}, Head {}: {} sectors, size {} bytes",
+                    cylinder, head, sector_count, sector_size
+                ));
+            }
 
             let skip_bytes = sector_count as u64
                 + if head & 0x80 != 0 { sector_count as u64 } else { 0 }
                 + if head & 0x40 != 0 { sector_count as u64 } else { 0 };
             cursor.set_position(cursor.position() + skip_bytes);
 
-            for _ in 0..sector_count {
+            for sector in 1..=sector_count {
                 let type_byte = cursor.read_u8()?;
+                let mut sector_data = Vec::new();
                 match type_byte {
-                    1 => cursor.set_position(cursor.position() + sector_size as u64),
-                    2 => cursor.set_position(cursor.position() + 1),
+                    1 => {
+                        sector_data.resize(sector_size as usize, 0);
+                        cursor.read_exact(&mut sector_data)?;
+                    }
+                    2 => {
+                        let value = cursor.read_u8()?;
+                        sector_data = vec![value; sector_size as usize];
+                    }
                     _ => return Err(anyhow!("Unsupported sector type: {}", type_byte)),
+                }
+                if ascii {
+                    let ascii_str: String = sector_data.iter()
+                        .take(32)
+                        .map(|&b| if b >= 32 && b <= 126 { b as char } else { '.' })
+                        .collect();
+                    output.push(format!(
+                        "Cyl {}, Head {}, Sector {}, Size {} bytes, Mode {}: {}",
+                        cylinder, head, sector, sector_size, mode, ascii_str
+                    ));
                 }
             }
         }
@@ -126,7 +145,7 @@ impl FormatHandler for IMDHandler {
                         1 => {
                             let mut sector_data = vec![0u8; sector_size as usize];
                             cursor.read_exact(&mut sector_data)?;
-                            raw_data.extend_from_slice(&sector_data);
+                            raw_data.extend_from_slice(&sector_data); // Fixed typo
                             if verbose { println!("  Sector: Normal (type 1), {} bytes", sector_size); }
                         }
                         2 => {
@@ -136,7 +155,6 @@ impl FormatHandler for IMDHandler {
                             if verbose { println!("  Sector: Compressed (type 2), value {}", value); }
                         }
                         _ => {
-                            // Skip unsupported types but still advance cursor
                             if verbose { println!("  Sector: Unsupported (type {}), skipping", type_byte); }
                             cursor.set_position(cursor.position() + sector_size as u64);
                         }
@@ -152,7 +170,7 @@ impl FormatHandler for IMDHandler {
             }
 
             if validate {
-                let expected_size = total_sectors * 512; // Assuming 512-byte sectors for validation
+                let expected_size = total_sectors * 512;
                 if raw_data.len() != expected_size {
                     return Err(anyhow!("Validation failed: Output size {} bytes does not match expected {} bytes", raw_data.len(), expected_size));
                 }
