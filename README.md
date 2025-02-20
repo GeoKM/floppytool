@@ -16,7 +16,7 @@ A command-line utility for converting and inspecting floppy disk images, support
    git clone https://github.com/GeoKM/floppytool.git
    cd floppytool
 
-(Replace <your-repo-url-here> with your actual repository URL if sharing publicly.)
+
 3. Build the release binary:
 bash
 cargo build --release
