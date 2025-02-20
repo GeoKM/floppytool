@@ -24,6 +24,6 @@ Run commands from the project root with the built binary.
 
 Display Disk Information
 
-    Basic geometry:
-    ```bash
-./target/release/floppytool --input LAPLINK3.IMD display
+Basic geometry:
+```bash
+    ./target/release/floppytool --input LAPLINK3.IMD display
