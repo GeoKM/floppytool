@@ -30,30 +30,49 @@ fn load_handler(file_path: &PathBuf) -> Result<Box<dyn FormatHandler>> {
 }
 
 #[derive(Parser)]
-#[command(about = "Floppy Disk Image Utility")]
+#[command(
+    about = "A utility for displaying and converting floppy disk image formats",
+    version = env!("CARGO_PKG_VERSION"),  // Pulls "0.2.1" from Cargo.toml
+    long_about = "Floppytool is a Rust-based tool for working with floppy disk images. It supports displaying image details and converting between formats like .img and .imd. Use the 'display' subcommand to inspect an image or 'convert' to transform it into another format.",
+    after_help = "Additional options are available under subcommands. For display options, see `floppytool display --help` (e.g., --ascii). For conversion options, see `floppytool convert --help` (e.g., --format, --output, --geometry, --verbose, --validate)."
+)]
 struct Cli {
+    /// Input floppy disk image file (e.g., file.img, file.imd)
     #[arg(short, long)]
     input: PathBuf,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Display details of the input floppy image
     Display {
-        #[arg(long)]
+        /// Show sector data as ASCII characters (instead of geometry summary)
+        #[arg(long, default_value_t = false)]
         ascii: bool,
     },
+    /// Convert the input floppy image to another format
     Convert {
+        /// Target format for conversion (e.g., 'img', 'imd')
         #[arg(long)]
         format: String,
+
+        /// Output file path for the converted image
         #[arg(long)]
         output: PathBuf,
+
+        /// Specify geometry as 'cylinders,heads,sectors,size,mode' (e.g., '80,2,15,512,4') or 'auto' for inference
         #[arg(long, value_parser = parse_geometry, default_value = "auto")]
         geometry: Geometry,
-        #[arg(long)]
+
+        /// Print detailed conversion progress
+        #[arg(long, default_value_t = false)]
         verbose: bool,
-        #[arg(long)]
+
+        /// Validate the output file after conversion
+        #[arg(long, default_value_t = false)]
         validate: bool,
     },
 }
