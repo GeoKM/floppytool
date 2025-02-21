@@ -1,7 +1,7 @@
 [package]
 name = "floppytool"
 version = "0.2.0"
-edition = "2025"
+edition = "2021"
 readme = "README.md"
 
 [dependencies]
