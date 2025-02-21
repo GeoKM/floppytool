@@ -37,7 +37,7 @@ impl IMGHandler {
         if size % 512 == 0 {
             let total_sectors = size / 512;
             for cyl in 40..=80 {
-                for heads in (2..=1).rev() {
+                for heads in 1..=2 { // Fixed: (2..=1).rev() -> 1..=2
                     let spt = total_sectors / (cyl * heads);
                     if spt * cyl * heads == total_sectors && spt <= 36 {
                         return Ok((cyl as u8, heads as u8, spt as u8, 512, 5));
