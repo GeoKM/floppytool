@@ -21,7 +21,7 @@ impl IMGHandler {
             (360_000, 40, 2, 9, 5),    // 5.25" DD 360 KB, 250 kbps MFM
             (720_000, 80, 2, 9, 5),    // 3.5" DD 720 KB, 250 kbps MFM
             (1_228_800, 80, 2, 15, 4), // 5.25" HD 1.2 MB, 300 kbps MFM
-            (1_440_000, 80, 2, 18, 5), // 3.5" HD 1.44 MB, 250 kbps MFM
+            (1_474_560, 80, 2, 18, 5), // 3.5" HD 1.44 MB, 250 kbps MFM (corrected from 1_440_000)
         ];
 
         for &(expected_size, cyl, heads, spt, mode) in &formats {
@@ -36,8 +36,8 @@ impl IMGHandler {
 
         if size % 512 == 0 {
             let total_sectors = size / 512;
-            for cyl in 40..=80 {
-                for heads in 1..=2 {
+            for cyl in (40..=80).rev() { // Reverse to prefer higher cylinders (standard geometries)
+                for heads in (1..=2).rev() {
                     let spt = total_sectors / (cyl * heads);
                     if spt * cyl * heads == total_sectors && spt <= 36 {
                         return Ok((cyl as u8, heads as u8, spt as u8, 512, 5));
