@@ -107,9 +107,6 @@ fn main() -> Result<()> {
                 if let Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) = handler.geometry()? {
                     println!("Geometry for reverse conversion: {},{},{},{},{}", cylinders, heads, sectors_per_track, sector_size, mode);
                 }
-            } else if format == "imd" && matches!(geometry, Geometry::Auto) {
-                println!("Error: Conversion to .imd requires explicit geometry (e.g., '--geometry 40,2,9,512,4')");
-                std::process::exit(1);
             }
             if validate {
                 let output_handler = load_handler(&output)?;

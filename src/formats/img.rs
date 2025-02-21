@@ -13,24 +13,25 @@ impl IMGHandler {
         IMGHandler { data }
     }
 
-    fn infer_geometry(&self) -> Result<(u8, u8, u8, u16)> {
+    fn infer_geometry(&self) -> Result<(u8, u8, u8, u16, u8)> {
         let size = self.data.len();
 
+        // (size, cylinders, heads, sectors_per_track, mode)
         let formats = [
-            (360_000, 40, 2, 9),    // 5.25" DD 360 KB
-            (720_000, 80, 2, 9),    // 3.5" DD 720 KB
-            (1_228_800, 80, 2, 15), // 5.25" HD 1.2 MB (corrected from 1,200,000)
-            (1_440_000, 80, 2, 18), // 3.5" HD 1.44 MB
+            (360_000, 40, 2, 9, 5),    // 5.25" DD 360 KB, 250 kbps MFM
+            (720_000, 80, 2, 9, 5),    // 3.5" DD 720 KB, 250 kbps MFM
+            (1_228_800, 80, 2, 15, 4), // 5.25" HD 1.2 MB, 300 kbps MFM
+            (1_440_000, 80, 2, 18, 5), // 3.5" HD 1.44 MB, 250 kbps MFM
         ];
 
-        for &(expected_size, cyl, heads, spt) in &formats {
+        for &(expected_size, cyl, heads, spt, mode) in &formats {
             if size == expected_size {
-                return Ok((cyl, heads, spt, 512));
+                return Ok((cyl, heads, spt, 512, mode));
             }
         }
 
         if size == 368_640 {
-            return Ok((40, 2, 9, 512));
+            return Ok((40, 2, 9, 512, 5)); // 360 KB variant, 250 kbps MFM
         }
 
         if size % 512 == 0 {
@@ -39,7 +40,7 @@ impl IMGHandler {
                 for heads in (2..=1).rev() {
                     let spt = total_sectors / (cyl * heads);
                     if spt * cyl * heads == total_sectors && spt <= 36 {
-                        return Ok((cyl as u8, heads as u8, spt as u8, 512));
+                        return Ok((cyl as u8, heads as u8, spt as u8, 512, 5));
                     }
                 }
             }
@@ -52,14 +53,14 @@ impl IMGHandler {
 impl FormatHandler for IMGHandler {
     fn display(&self, ascii: bool) -> Result<String> {
         let size = self.data.len();
-        let (cylinders, heads, sectors_per_track, sector_size) = self.infer_geometry()?;
+        let (cylinders, heads, sectors_per_track, sector_size, mode) = self.infer_geometry()?;
         let mut output = Vec::new();
 
         output.push(format!("Raw IMG: {} bytes", size));
         if !ascii {
             output.push(format!(
-                "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
-                cylinders, heads, sectors_per_track, sector_size
+                "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector, mode {}",
+                cylinders, heads, sectors_per_track, sector_size, mode
             ));
         } else {
             let mut pos = 0;
@@ -72,8 +73,8 @@ impl FormatHandler for IMGHandler {
                             .map(|&b| if b >= 32 && b <= 126 { b as char } else { '.' })
                             .collect();
                         output.push(format!(
-                            "Cyl {}, Head {}, Sector {}, Size {} bytes: {}",
-                            cyl, head, sector, sector_size, ascii_str
+                            "Cyl {}, Head {}, Sector {}, Size {} bytes, Mode {}: {}",
+                            cyl, head, sector, sector_size, mode, ascii_str
                         ));
                         pos += sector_size as usize;
                     }
@@ -89,9 +90,8 @@ impl FormatHandler for IMGHandler {
                 Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) => {
                     (cylinders, heads, sectors_per_track, sector_size, mode)
                 }
-                Some(Geometry::Auto) | None => {
-                    let (cyl, heads, spt, size) = self.infer_geometry()?;
-                    (cyl, heads, spt, size, 5) // Default mode if not specified
+                _ => { // Auto or None
+                    self.infer_geometry()? // Use inferred geometry and mode
                 }
             };
 
@@ -165,8 +165,8 @@ impl FormatHandler for IMGHandler {
     }
 
     fn geometry(&self) -> Result<Option<Geometry>> {
-        let (cylinders, heads, sectors_per_track, sector_size) = self.infer_geometry()?;
-        Ok(Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode: 5 }))
+        let (cylinders, heads, sectors_per_track, sector_size, mode) = self.infer_geometry()?;
+        Ok(Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }))
     }
 
     fn data(&self) -> &[u8] {
