@@ -30,3 +30,7 @@ Display Disk Information
 Basic geometry:
    ```bash
        ./target/release/floppytool --input filename.imd display
+
+test:
+   ```bash
+       ./
