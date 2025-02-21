@@ -1,4 +1,3 @@
-```markdown
 # floppytool
 
 A command-line utility for converting and inspecting floppy disk images, built with Rust for retro computing enthusiasts. Currently supports `.imd` and `.img` formats, with an extensible design for adding more.
@@ -111,4 +110,3 @@ Contributions are welcome! To add new formats (e.g., `.td0`, `.dsk`), implement 
 Licensed under the MIT License. See [LICENSE](./LICENSE) for details.
 
 Copyright (c) 2025 Keith Matthews
-```
