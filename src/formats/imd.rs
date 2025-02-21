@@ -119,7 +119,7 @@ impl FormatHandler for IMDHandler {
             let header_end = self.data.iter().position(|&b| b == 0x1A).unwrap();
             let mut cursor = Cursor::new(&self.data[header_end + 1..]);
             let mut total_sectors = 0;
-            let mut compressed_sectors = 0;
+            let mut total_compressed = 0;
 
             while cursor.position() < self.data.len() as u64 - header_end as u64 - 1 {
                 let mode = cursor.read_u8()?;
@@ -129,36 +129,45 @@ impl FormatHandler for IMDHandler {
                 let sector_size_code = cursor.read_u8()?;
                 let sector_size = 128 << sector_size_code;
 
-                if verbose {
-                    println!("Processing Cyl {}, Head {}: {} sectors, size {} bytes, mode {}", cylinder, head, sector_count, sector_size, mode);
-                }
-
                 let skip_bytes = sector_count as u64
                     + if head & 0x80 != 0 { sector_count as u64 } else { 0 }
                     + if head & 0x40 != 0 { sector_count as u64 } else { 0 };
                 cursor.set_position(cursor.position() + skip_bytes);
 
-                total_sectors += sector_count as usize;
+                let mut normal_sectors = 0;
+                let mut compressed_sectors = 0;
+
                 for _ in 0..sector_count {
                     let type_byte = cursor.read_u8()?;
                     match type_byte {
                         1 => {
                             let mut sector_data = vec![0u8; sector_size as usize];
                             cursor.read_exact(&mut sector_data)?;
-                            raw_data.extend_from_slice(&sector_data); // Fixed: §or_data -> sector_data
-                            if verbose { println!("  Sector: Normal (type 1), {} bytes", sector_size); }
+                            raw_data.extend_from_slice(&sector_data);
+                            normal_sectors += 1;
                         }
                         2 => {
                             let value = cursor.read_u8()?;
                             raw_data.extend(vec![value; sector_size as usize]);
                             compressed_sectors += 1;
-                            if verbose { println!("  Sector: Compressed (type 2), value {}", value); }
                         }
                         _ => {
-                            if verbose { println!("  Sector: Unsupported (type {}), skipping", type_byte); }
+                            if verbose {
+                                println!("Skipping unsupported sector type {} in Cyl {}, Head {}", type_byte, cylinder, head);
+                            }
                             cursor.set_position(cursor.position() + sector_size as u64);
                         }
                     }
+                }
+
+                total_sectors += sector_count as usize;
+                total_compressed += compressed_sectors;
+
+                if verbose {
+                    println!(
+                        "Processing Cyl {}, Head {}: {} sectors ({} normal, {} compressed), size {} bytes, mode {}",
+                        cylinder, head, sector_count, normal_sectors, compressed_sectors, sector_size, mode
+                    );
                 }
             }
 
@@ -166,7 +175,7 @@ impl FormatHandler for IMDHandler {
             file.write_all(&raw_data)?;
 
             if verbose {
-                println!("Total sectors: {}, Compressed sectors: {}", total_sectors, compressed_sectors);
+                println!("Total sectors: {}, Compressed sectors: {}", total_sectors, total_compressed);
             }
 
             if validate {

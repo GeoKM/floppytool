@@ -37,7 +37,7 @@ impl IMGHandler {
         if size % 512 == 0 {
             let total_sectors = size / 512;
             for cyl in 40..=80 {
-                for heads in 1..=2 { // Fixed: (2..=1).rev() -> 1..=2
+                for heads in 1..=2 {
                     let spt = total_sectors / (cyl * heads);
                     if spt * cyl * heads == total_sectors && spt <= 36 {
                         return Ok((cyl as u8, heads as u8, spt as u8, 512, 5));
@@ -90,9 +90,7 @@ impl FormatHandler for IMGHandler {
                 Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) => {
                     (cylinders, heads, sectors_per_track, sector_size, mode)
                 }
-                _ => { // Auto or None
-                    self.infer_geometry()? // Use inferred geometry and mode
-                }
+                _ => self.infer_geometry()?,
             };
 
             let expected_size = cylinders as usize * heads as usize * sectors_per_track as usize * sector_size as usize;
@@ -107,7 +105,9 @@ impl FormatHandler for IMGHandler {
             raw_data.extend(b"IMD 1.18: 28/11/2015 10:08:58\r\nLaplink v3 \r\n\x1A");
 
             let mut pos = 0;
-            let mut compressed_sectors = 0;
+            let mut total_sectors = 0;
+            let mut total_compressed = 0;
+
             for cyl in 0..cylinders {
                 for head in 0..heads {
                     raw_data.push(mode);
@@ -120,9 +120,8 @@ impl FormatHandler for IMGHandler {
                         raw_data.push(s);
                     }
 
-                    if verbose {
-                        println!("Writing Cyl {}, Head {}: {} sectors, size {} bytes, mode {}", cyl, head, sectors_per_track, sector_size, mode);
-                    }
+                    let mut normal_sectors = 0;
+                    let mut compressed_sectors = 0;
 
                     for _ in 0..sectors_per_track {
                         let chunk = &self.data[pos..pos + sector_size as usize];
@@ -130,13 +129,22 @@ impl FormatHandler for IMGHandler {
                             raw_data.push(2); // Compressed
                             raw_data.push(chunk[0]);
                             compressed_sectors += 1;
-                            if verbose { println!("  Sector: Compressed (type 2), value {}", chunk[0]); }
                         } else {
                             raw_data.push(1); // Normal data
                             raw_data.extend_from_slice(chunk);
-                            if verbose { println!("  Sector: Normal (type 1), {} bytes", sector_size); }
+                            normal_sectors += 1;
                         }
                         pos += sector_size as usize;
+                    }
+
+                    total_sectors += sectors_per_track as usize;
+                    total_compressed += compressed_sectors;
+
+                    if verbose {
+                        println!(
+                            "Writing Cyl {}, Head {}: {} sectors ({} normal, {} compressed), size {} bytes, mode {}",
+                            cyl, head, sectors_per_track, normal_sectors, compressed_sectors, sector_size, mode
+                        );
                     }
                 }
             }
@@ -145,7 +153,7 @@ impl FormatHandler for IMGHandler {
             file.write_all(&raw_data)?;
 
             if verbose {
-                println!("Total sectors: {}, Compressed sectors: {}", cylinders as usize * heads as usize * sectors_per_track as usize, compressed_sectors);
+                println!("Total sectors: {}, Compressed sectors: {}", total_sectors, total_compressed);
             }
 
             if validate {

@@ -92,8 +92,8 @@ fn main() -> Result<()> {
         Commands::Display { ascii } => println!("{}", handler.display(ascii)?),
         Commands::Convert { format, output, geometry, verbose, validate } => {
             let target: Box<dyn FormatHandler> = match format.as_str() {
-                "img" => Box::new(formats::img::IMGHandler::new(Vec::new())) as Box<dyn FormatHandler>,
-                "imd" => Box::new(formats::imd::IMDHandler::new(Vec::new())) as Box<dyn FormatHandler>,
+                "img" => Box::new(formats::img::IMGHandler::new(Vec::new())),
+                "imd" => Box::new(formats::imd::IMDHandler::new(Vec::new())),
                 _ => return Err(anyhow!("Unknown target format: {}", format)),
             };
             let effective_geometry = match geometry.clone() {
@@ -123,14 +123,14 @@ fn main() -> Result<()> {
                         return Err(anyhow!("Validation failed: Output size {} does not match expected geometry size {}", output_data.len(), expected_size));
                     }
                     if output_data.len() != input_data.len() {
-                        println!("Warning: Output size {} differs from input size {} due to compression in .imd", output_data.len(), input_data.len());
+                        println!("Warning: Output size {} differs from input size {} due to compression in source .imd", output_data.len(), input_data.len());
                     }
                     println!("Validation passed: Output size matches expected geometry");
                 } else {
                     if output_data.len() != input_data.len() {
-                        println!("Warning: Output size {} differs from input size {} due to compression in .imd", output_data.len(), input_data.len());
+                        println!("Warning: Output size {} differs from input size {} due to compression in output .imd", output_data.len(), input_data.len());
                     }
-                    println!("Validation passed: Output matches expected geometry");
+                    println!("Validation passed: IMD file written successfully");
                 }
             }
             println!("Converted to {}", output.display());
