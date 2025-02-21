@@ -17,9 +17,9 @@ impl IMGHandler {
         let size = self.data.len();
 
         let formats = [
-            (360_000, 40, 2, 9),   // 5.25" DD 360 KB
-            (720_000, 80, 2, 9),   // 3.5" DD 720 KB
-            (1_200_000, 80, 2, 15), // 5.25" HD 1.2 MB
+            (360_000, 40, 2, 9),    // 5.25" DD 360 KB
+            (720_000, 80, 2, 9),    // 3.5" DD 720 KB
+            (1_228_800, 80, 2, 15), // 5.25" HD 1.2 MB (corrected from 1,200,000)
             (1_440_000, 80, 2, 18), // 3.5" HD 1.44 MB
         ];
 
@@ -89,7 +89,10 @@ impl FormatHandler for IMGHandler {
                 Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) => {
                     (cylinders, heads, sectors_per_track, sector_size, mode)
                 }
-                _ => return Err(anyhow!("Conversion from .img to .imd requires explicit geometry (e.g., '--geometry 40,2,9,512,4')")),
+                Some(Geometry::Auto) | None => {
+                    let (cyl, heads, spt, size) = self.infer_geometry()?;
+                    (cyl, heads, spt, size, 5) // Default mode if not specified
+                }
             };
 
             let expected_size = cylinders as usize * heads as usize * sectors_per_track as usize * sector_size as usize;
