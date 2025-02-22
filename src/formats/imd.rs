@@ -145,7 +145,7 @@ impl FormatHandler for IMDHandler {
                         1 => {
                             let mut sector_data = vec![0u8; sector_size as usize];
                             cursor.read_exact(&mut sector_data)?;
-                            raw_data.extend_from_slice(&sector_data); // Fixed typo
+                            raw_data.extend_from_slice(&sector_data); // Corrected!!
                             normal_sectors += 1;
                         }
                         2 => {

@@ -16,12 +16,11 @@ impl IMGHandler {
     fn infer_geometry(&self) -> Result<(u8, u8, u8, u16, u8)> {
         let size = self.data.len();
 
-        // (size, cylinders, heads, sectors_per_track, mode)
         let formats = [
-            (360_000, 40, 2, 9, 5),    // 5.25" DD 360 KB, 250 kbps MFM
-            (720_000, 80, 2, 9, 5),    // 3.5" DD 720 KB, 250 kbps MFM
-            (1_228_800, 80, 2, 15, 4), // 5.25" HD 1.2 MB, 300 kbps MFM
-            (1_474_560, 80, 2, 18, 5), // 3.5" HD 1.44 MB, 250 kbps MFM (corrected from 1_440_000)
+            (360_000, 40, 2, 9, 5),
+            (720_000, 80, 2, 9, 5),
+            (1_228_800, 80, 2, 15, 4),
+            (1_474_560, 80, 2, 18, 5),
         ];
 
         for &(expected_size, cyl, heads, spt, mode) in &formats {
@@ -31,12 +30,12 @@ impl IMGHandler {
         }
 
         if size == 368_640 {
-            return Ok((40, 2, 9, 512, 5)); // 360 KB variant, 250 kbps MFM
+            return Ok((40, 2, 9, 512, 5));
         }
 
         if size % 512 == 0 {
             let total_sectors = size / 512;
-            for cyl in (40..=80).rev() { // Reverse to prefer higher cylinders (standard geometries)
+            for cyl in (40..=80).rev() {
                 for heads in (1..=2).rev() {
                     let spt = total_sectors / (cyl * heads);
                     if spt * cyl * heads == total_sectors && spt <= 36 {
@@ -59,9 +58,12 @@ impl FormatHandler for IMGHandler {
         output.push(format!("Raw IMG: {} bytes", size));
         if !ascii {
             output.push(format!(
-                "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector, mode {}",
-                cylinders, heads, sectors_per_track, sector_size, mode
+                "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
+                cylinders, heads, sectors_per_track, sector_size
             ));
+            output.push(
+                "Note: Mode is not stored in .img files; inferred mode {} (common modes for this size: 4 or 5)".to_string()
+            );
         } else {
             let mut pos = 0;
             for cyl in 0..cylinders {
@@ -102,7 +104,8 @@ impl FormatHandler for IMGHandler {
             }
 
             let mut raw_data = Vec::new();
-            raw_data.extend(b"IMD 1.18: 28/11/2015 10:08:58\r\nLaplink v3 \r\n\x1A");
+            // Fixed, short header
+            raw_data.extend(b"IMD 1.18 - floppytool\n\x1A");
 
             let mut pos = 0;
             let mut total_sectors = 0;
