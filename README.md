@@ -66,6 +66,13 @@ Run commands with the built binary from the project root (`./target/release/flop
   ```
   Use geometry from a prior `.imd` conversion or specify manually.
 
+- **`.img` to `.imd`**:
+  ```bash
+  ./target/release/floppytool --input filename.img convert --format imd --output newfilename.imd --geometry 40,2,9,512,4 --verbose --validate
+  ```
+
+  Use --geometry to override the default mode (e.g., mode 5) if matching an existing .imd file.
+
 ### Command Options
 | Option         | Description                                      | Subcommand   | Default    |
 |-----------------|--------------------------------------------------|--------------|------------|
