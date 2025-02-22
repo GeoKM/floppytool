@@ -1,7 +1,8 @@
 use crate::{FormatHandler, Geometry};
 use anyhow::{Result, anyhow};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Cursor};
+use byteorder::ReadBytesExt;
 use std::path::PathBuf;
 
 pub struct IMGHandler {
@@ -86,7 +87,7 @@ impl FormatHandler for IMGHandler {
         Ok(output.join("\n"))
     }
 
-    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()> {
+    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, input_path: &PathBuf, meta_path: Option<&PathBuf>, geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()> {
         if target.data().len() == 0 { // Conversion to IMD
             let (cylinders, heads, sectors_per_track, sector_size, mode) = match geometry {
                 Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) => {
@@ -104,8 +105,38 @@ impl FormatHandler for IMGHandler {
             }
 
             let mut raw_data = Vec::new();
-            // Fixed, short header
-            raw_data.extend(b"IMD 1.18 - floppytool\n\x1A");
+            let mut sector_ids_map = Vec::new();
+
+            // Load header and sector IDs from meta_path if provided, else fall back to input-based default
+            let default_meta_path = input_path.with_extension("imd.meta");
+            let meta_path = meta_path.unwrap_or(&default_meta_path);
+            if meta_path.exists() {
+                let mut meta_file = File::open(meta_path)?;
+                let mut meta_data = Vec::new();
+                meta_file.read_to_end(&mut meta_data)?;
+                let header_end = meta_data.iter().position(|&b| b == 0x1A).unwrap();
+                raw_data.extend_from_slice(&meta_data[..header_end + 1]);
+                
+                let mut cursor = Cursor::new(&meta_data[header_end + 1..]);
+                while cursor.position() < meta_data.len() as u64 - header_end as u64 - 1 {
+                    let cyl = cursor.read_u8()?;
+                    let head = cursor.read_u8()?;
+                    let count = cursor.read_u8()?;
+                    let mut ids = Vec::new();
+                    for _ in 0..count {
+                        ids.push(cursor.read_u8()?);
+                    }
+                    sector_ids_map.push((cyl, head, ids));
+                }
+                if verbose {
+                    println!("Loaded metadata from {}", meta_path.display());
+                }
+            } else {
+                raw_data.extend(b"IMD 1.18 - floppytool\n\x1A");
+                if verbose {
+                    println!("No metadata found at {}; using default header", meta_path.display());
+                }
+            }
 
             let mut pos = 0;
             let mut total_sectors = 0;
@@ -119,7 +150,12 @@ impl FormatHandler for IMGHandler {
                     raw_data.push(sectors_per_track);
                     raw_data.push(match sector_size { 128 => 0, 256 => 1, 512 => 2, 1024 => 3, 2048 => 4, 4096 => 5, _ => 2 });
 
-                    for s in 1..=sectors_per_track {
+                    // Use original sector IDs if available
+                    let sector_ids = sector_ids_map.iter()
+                        .find(|&&(c, h, _)| c == cyl && h == head)
+                        .map(|(_, _, ids)| ids.clone())
+                        .unwrap_or_else(|| (1..=sectors_per_track).collect());
+                    for s in sector_ids { // Removed * here
                         raw_data.push(s);
                     }
 
@@ -164,7 +200,7 @@ impl FormatHandler for IMGHandler {
                 let mut output_data = Vec::new();
                 output_file.read_to_end(&mut output_data)?;
                 if output_data.len() != raw_data.len() {
-                    return Err(anyhow!("Validation failed: Output file size {} does not match written size {}", output_data.len(), raw_data.len()));
+                    return Err(anyhow!("Validation failed: Output size {} does not match written size {}", output_data.len(), raw_data.len()));
                 }
                 println!("Validation passed: Output matches written data");
             }

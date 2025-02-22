@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 trait FormatHandler: Send + Sync {
     fn display(&self, ascii: bool) -> Result<String>;
-    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()>;
+    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, input_path: &PathBuf, meta_path: Option<&PathBuf>, geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()>;
     fn data(&self) -> &[u8];
     fn geometry(&self) -> Result<Option<Geometry>>;
 }
@@ -32,9 +32,9 @@ fn load_handler(file_path: &PathBuf) -> Result<Box<dyn FormatHandler>> {
 #[derive(Parser)]
 #[command(
     about = "A utility for displaying and converting floppy disk image formats",
-    version = env!("CARGO_PKG_VERSION"),  // Pulls "0.2.1" from Cargo.toml
+    version = env!("CARGO_PKG_VERSION"),
     long_about = "Floppytool is a Rust-based tool for working with floppy disk images. It supports displaying image details and converting between formats like .img and .imd. Use the 'display' subcommand to inspect an image or 'convert' to transform it into another format.",
-    after_help = "Additional options are available under subcommands. For display options, see `floppytool display --help` (e.g., --ascii). For conversion options, see `floppytool convert --help` (e.g., --format, --output, --geometry, --verbose, --validate)."
+    after_help = "Additional options are available under subcommands. For display options, see `floppytool display --help` (e.g., --ascii). For conversion options, see `floppytool convert --help` (e.g., --format, --output, --geometry, --verbose, --validate, --imdmeta)."
 )]
 struct Cli {
     /// Input floppy disk image file (e.g., file.img, file.imd)
@@ -74,6 +74,10 @@ enum Commands {
         /// Validate the output file after conversion
         #[arg(long, default_value_t = false)]
         validate: bool,
+
+        /// Optional path to an .imd.meta file from a previous conversion (overrides default)
+        #[arg(long)]
+        imdmeta: Option<PathBuf>,
     },
 }
 
@@ -109,7 +113,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Display { ascii } => println!("{}", handler.display(ascii)?),
-        Commands::Convert { format, output, geometry, verbose, validate } => {
+        Commands::Convert { format, output, geometry, verbose, validate, imdmeta } => {
             let target: Box<dyn FormatHandler> = match format.as_str() {
                 "img" => Box::new(formats::img::IMGHandler::new(Vec::new())),
                 "imd" => Box::new(formats::imd::IMDHandler::new(Vec::new())),
@@ -121,7 +125,7 @@ fn main() -> Result<()> {
                 }),
                 g => g,
             };
-            handler.convert(&*target, &output, Some(effective_geometry.clone()), verbose, validate)?;
+            handler.convert(&*target, &output, &cli.input, imdmeta.as_ref(), Some(effective_geometry.clone()), verbose, validate)?;
             if format == "img" {
                 if let Some(Geometry::Manual { cylinders, heads, sectors_per_track, sector_size, mode }) = handler.geometry()? {
                     println!("Geometry for reverse conversion: {},{},{},{},{}", cylinders, heads, sectors_per_track, sector_size, mode);

@@ -115,13 +115,16 @@ impl FormatHandler for IMDHandler {
         Ok(output.join("\n"))
     }
 
-    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, _geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()> {
+    fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, input_path: &PathBuf, meta_path: Option<&PathBuf>, _geometry: Option<Geometry>, verbose: bool, validate: bool) -> Result<()> {
         if target.data().len() == 0 { // IMG conversion
             let mut raw_data = Vec::new();
             let header_end = self.data.iter().position(|&b| b == 0x1A).unwrap();
+            let header = &self.data[..header_end + 1]; // Include 0x1A
             let mut cursor = Cursor::new(&self.data[header_end + 1..]);
             let mut total_sectors = 0;
             let mut total_compressed = 0;
+            let mut sector_size = 0;
+            let mut sector_ids_map = Vec::new();
 
             while cursor.position() < self.data.len() as u64 - header_end as u64 - 1 {
                 let mode = cursor.read_u8()?;
@@ -129,37 +132,49 @@ impl FormatHandler for IMDHandler {
                 let head = cursor.read_u8()?;
                 let sector_count = cursor.read_u8()?;
                 let sector_size_code = cursor.read_u8()?;
-                let sector_size = 128 << sector_size_code;
+                let current_sector_size = 128 << sector_size_code;
+                if sector_size == 0 { sector_size = current_sector_size; }
 
-                let skip_bytes = sector_count as u64
-                    + if head & 0x80 != 0 { sector_count as u64 } else { 0 }
+                // Read sector ID map
+                let mut sector_ids = Vec::new();
+                for _ in 0..sector_count {
+                    sector_ids.push(cursor.read_u8()?);
+                }
+                sector_ids_map.push((cylinder, head, sector_ids.clone()));
+                let skip_bytes = if head & 0x80 != 0 { sector_count as u64 } else { 0 }
                     + if head & 0x40 != 0 { sector_count as u64 } else { 0 };
                 cursor.set_position(cursor.position() + skip_bytes);
 
+                // Store sector data in correct order
+                let mut track_data = vec![vec![0u8; current_sector_size as usize]; sector_count as usize];
                 let mut normal_sectors = 0;
                 let mut compressed_sectors = 0;
 
-                for _ in 0..sector_count {
+                for i in 0..sector_count {
                     let type_byte = cursor.read_u8()?;
+                    let sector_idx = (sector_ids[i as usize] - 1) as usize; // 1-based to 0-based
                     match type_byte {
                         1 => {
-                            let mut sector_data = vec![0u8; sector_size as usize];
-                            cursor.read_exact(&mut sector_data)?;
-                            raw_data.extend_from_slice(&sector_data); // Corrected!!
+                            cursor.read_exact(&mut track_data[sector_idx])?;
                             normal_sectors += 1;
                         }
                         2 => {
                             let value = cursor.read_u8()?;
-                            raw_data.extend(vec![value; sector_size as usize]);
+                            track_data[sector_idx].fill(value);
                             compressed_sectors += 1;
                         }
                         _ => {
                             if verbose {
                                 println!("Skipping unsupported sector type {} in Cyl {}, Head {}", type_byte, cylinder, head);
                             }
-                            cursor.set_position(cursor.position() + sector_size as u64);
+                            cursor.set_position(cursor.position() + current_sector_size as u64);
                         }
                     }
+                }
+
+                // Append in sequential order for .img
+                for sector_data in track_data {
+                    raw_data.extend_from_slice(&sector_data);
                 }
 
                 total_sectors += sector_count as usize;
@@ -168,7 +183,7 @@ impl FormatHandler for IMDHandler {
                 if verbose {
                     println!(
                         "Processing Cyl {}, Head {}: {} sectors ({} normal, {} compressed), size {} bytes, mode {}",
-                        cylinder, head, sector_count, normal_sectors, compressed_sectors, sector_size, mode
+                        cylinder, head, sector_count, normal_sectors, compressed_sectors, current_sector_size, mode
                     );
                 }
             }
@@ -176,12 +191,23 @@ impl FormatHandler for IMDHandler {
             let mut file = File::create(output_path)?;
             file.write_all(&raw_data)?;
 
+            // Save header and sector IDs using input file stem unless meta_path is provided
+            let default_meta_path = input_path.with_extension("imd.meta");
+            let meta_path = meta_path.unwrap_or(&default_meta_path);
+            let mut meta_file = File::create(meta_path)?;
+            meta_file.write_all(header)?;
+            for (cyl, head, ids) in sector_ids_map {
+                meta_file.write_all(&[cyl, head, ids.len() as u8])?;
+                meta_file.write_all(&ids)?;
+            }
+
             if verbose {
                 println!("Total sectors: {}, Compressed sectors: {}", total_sectors, total_compressed);
+                println!("Saved metadata to {}", meta_path.display());
             }
 
             if validate {
-                let expected_size = total_sectors * 512;
+                let expected_size = total_sectors * sector_size as usize;
                 if raw_data.len() != expected_size {
                     return Err(anyhow!("Validation failed: Output size {} bytes does not match expected {} bytes", raw_data.len(), expected_size));
                 }
