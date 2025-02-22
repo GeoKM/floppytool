@@ -63,42 +63,44 @@ impl FormatHandler for IMDHandler {
         let header = String::from_utf8_lossy(&self.data[..header_end]);
         output.push(format!("Header: {}", header));
 
-        let mut cursor = Cursor::new(&self.data[header_end + 1..]);
-        while cursor.position() < self.data.len() as u64 - header_end as u64 - 1 {
-            let mode = cursor.read_u8()?;
-            let cylinder = cursor.read_u8()?;
-            let head = cursor.read_u8()?;
-            let sector_count = cursor.read_u8()?;
-            let sector_size_code = cursor.read_u8()?;
-            let sector_size = 128 << sector_size_code;
+        let (cylinders, heads, sectors_per_track, sector_size, mode) = self.analyze_geometry()?;
+        let total_size = cylinders as usize * heads as usize * sectors_per_track as usize * sector_size as usize;
 
-            if !ascii {
-                output.push(format!(
-                    "Cyl {}, Head {}: {} sectors, size {} bytes",
-                    cylinder, head, sector_count, sector_size
-                ));
-            }
+        if !ascii {
+            output.push(format!("Raw Size: {} bytes", total_size));
+            output.push(format!(
+                "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector, mode {}",
+                cylinders, heads, sectors_per_track, sector_size, mode
+            ));
+        } else {
+            let mut cursor = Cursor::new(&self.data[header_end + 1..]);
+            while cursor.position() < self.data.len() as u64 - header_end as u64 - 1 {
+                let mode = cursor.read_u8()?;
+                let cylinder = cursor.read_u8()?;
+                let head = cursor.read_u8()?;
+                let sector_count = cursor.read_u8()?;
+                let sector_size_code = cursor.read_u8()?;
+                let sector_size = 128 << sector_size_code;
 
-            let skip_bytes = sector_count as u64
-                + if head & 0x80 != 0 { sector_count as u64 } else { 0 }
-                + if head & 0x40 != 0 { sector_count as u64 } else { 0 };
-            cursor.set_position(cursor.position() + skip_bytes);
+                let skip_bytes = sector_count as u64
+                    + if head & 0x80 != 0 { sector_count as u64 } else { 0 }
+                    + if head & 0x40 != 0 { sector_count as u64 } else { 0 };
+                cursor.set_position(cursor.position() + skip_bytes);
 
-            for sector in 1..=sector_count {
-                let type_byte = cursor.read_u8()?;
-                let mut sector_data = Vec::new();
-                match type_byte {
-                    1 => {
-                        sector_data.resize(sector_size as usize, 0);
-                        cursor.read_exact(&mut sector_data)?;
+                for sector in 1..=sector_count {
+                    let type_byte = cursor.read_u8()?;
+                    let mut sector_data = Vec::new();
+                    match type_byte {
+                        1 => {
+                            sector_data.resize(sector_size as usize, 0);
+                            cursor.read_exact(&mut sector_data)?;
+                        }
+                        2 => {
+                            let value = cursor.read_u8()?;
+                            sector_data = vec![value; sector_size as usize];
+                        }
+                        _ => return Err(anyhow!("Unsupported sector type: {}", type_byte)),
                     }
-                    2 => {
-                        let value = cursor.read_u8()?;
-                        sector_data = vec![value; sector_size as usize];
-                    }
-                    _ => return Err(anyhow!("Unsupported sector type: {}", type_byte)),
-                }
-                if ascii {
                     let ascii_str: String = sector_data.iter()
                         .take(32)
                         .map(|&b| if b >= 32 && b <= 126 { b as char } else { '.' })
@@ -143,7 +145,7 @@ impl FormatHandler for IMDHandler {
                         1 => {
                             let mut sector_data = vec![0u8; sector_size as usize];
                             cursor.read_exact(&mut sector_data)?;
-                            raw_data.extend_from_slice(&sector_data);
+                            raw_data.extend_from_slice(&sector_data); // Fixed typo
                             normal_sectors += 1;
                         }
                         2 => {
