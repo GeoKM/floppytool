@@ -8,6 +8,7 @@ A command-line utility for converting and inspecting floppy disk images, built w
 - Optional verbose output and validation checks.
 - ASCII view of sector data with `--ascii`.
 - Preserve original `.imd` metadata (header and sector IDs) with `--imdmeta`.
+- Enhanced error messages for unsupported formats, invalid files, and validation failures, with actionable suggestions.
 
 ## Supported Formats
 - **`.img`**: Raw floppy disk images (e.g., 1.44MB, 1.2MB), no metadata or compression.
