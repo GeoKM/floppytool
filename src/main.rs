@@ -108,6 +108,24 @@ enum Geometry {
     Manual { cylinders: u8, heads: u8, sectors_per_track: u8, sector_size: u16, mode: u8 },
 }
 
+impl Geometry {
+    fn cylinders(&self) -> u8 {
+        match self {
+            Geometry::Auto => 0, // Not used in this context
+            Geometry::Manual { cylinders, .. } => *cylinders,
+        }
+    }
+    fn heads(&self) -> u8 {
+        match self { Geometry::Auto => 0, Geometry::Manual { heads, .. } => *heads }
+    }
+    fn sectors_per_track(&self) -> u8 {
+        match self { Geometry::Auto => 0, Geometry::Manual { sectors_per_track, .. } => *sectors_per_track }
+    }
+    fn sector_size(&self) -> u16 {
+        match self { Geometry::Auto => 0, Geometry::Manual { sector_size, .. } => *sector_size }
+    }
+}
+
 mod formats;
 
 fn main() -> Result<()> {
@@ -149,7 +167,15 @@ fn main() -> Result<()> {
                         _ => return Err(anyhow!("Validation requires explicit geometry")),
                     };
                     if output_data.len() != expected_size {
-                        return Err(anyhow!("Validation failed: Output size {} does not match expected geometry size {}", output_data.len(), expected_size));
+                        return Err(anyhow!(
+                            "Validation failed: Output size {} bytes does not match expected size {} bytes based on geometry ({},{},{},{}). Check --geometry or input file integrity.",
+                            output_data.len(),
+                            expected_size,
+                            effective_geometry.cylinders(),
+                            effective_geometry.heads(),
+                            effective_geometry.sectors_per_track(),
+                            effective_geometry.sector_size()
+                        ));
                     }
                     if output_data.len() != input_data.len() {
                         println!("Warning: Output size {} differs from input size {} due to compression in source .imd", output_data.len(), input_data.len());
