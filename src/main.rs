@@ -16,7 +16,7 @@ fn load_handler(file_path: &PathBuf) -> Result<Box<dyn FormatHandler>> {
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_lowercase())
-        .ok_or_else(|| anyhow!("No file extension"))?;
+        .ok_or_else(|| anyhow!("No file extension found for '{}'. Supported formats: .img, .imd.", file_path.display()))?;
 
     let mut file = File::open(file_path)?;
     let mut data = Vec::new();
@@ -25,7 +25,10 @@ fn load_handler(file_path: &PathBuf) -> Result<Box<dyn FormatHandler>> {
     match ext.as_str() {
         "imd" => Ok(Box::new(formats::imd::IMDHandler::new(data))),
         "img" => Ok(Box::new(formats::img::IMGHandler::new(data))),
-        _ => Err(anyhow!("Unsupported format: {}", ext)),
+        _ => Err(anyhow!(
+            "Unsupported format '{}'. Supported formats are .img and .imd. Use --input with a valid file (e.g., 'disk.img' or 'disk.imd').",
+            ext
+        )),
     }
 }
 
