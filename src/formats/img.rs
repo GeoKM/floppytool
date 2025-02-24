@@ -46,7 +46,10 @@ impl IMGHandler {
             }
         }
 
-        Err(anyhow!("No suitable geometry found; specify with --geometry"))
+        Err(anyhow!(
+            "No suitable geometry found for file size {} bytes. Specify with --geometry (e.g., '40,2,9,512,5' for 360KB, '80,2,18,512,5' for 1.44MB). Common sizes: 360KB, 720KB, 1.2MB, 1.44MB.",
+            size
+        ))
     }
 }
 
@@ -62,9 +65,10 @@ impl FormatHandler for IMGHandler {
                 "Detected Geometry: {} cylinders, {} heads, {} sectors/track, {} bytes/sector",
                 cylinders, heads, sectors_per_track, sector_size
             ));
-            output.push(
-                "Note: Mode is not stored in .img files; inferred mode {} (common modes for this size: 4 or 5)".to_string()
-            );
+            output.push(format!(
+                "Note: Mode is not stored in .img files; inferred mode {} (common modes for this size: 4 or 5)",
+                mode
+            ));
         } else {
             let mut pos = 0;
             for cyl in 0..cylinders {
