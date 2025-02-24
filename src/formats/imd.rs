@@ -15,7 +15,9 @@ impl IMDHandler {
 
     fn analyze_geometry(&self) -> Result<(u8, u8, u8, u16, u8)> {
         let header_end = self.data.iter().position(|&b| b == 0x1A)
-            .ok_or_else(|| anyhow!("No header terminator found"))?;
+            .ok_or_else(|| anyhow!(
+                "Invalid .imd file: No header terminator (0x1A) found. The file may be corrupted or not in ImageDisk format."
+            ))?;
         let mut cursor = Cursor::new(&self.data[header_end + 1..]);
         let mut max_cyl = 0;
         let mut max_head = 0;
@@ -59,7 +61,9 @@ impl FormatHandler for IMDHandler {
     fn display(&self, ascii: bool) -> Result<String> {
         let mut output = Vec::new();
         let header_end = self.data.iter().position(|&b| b == 0x1A)
-            .ok_or_else(|| anyhow!("No header terminator found"))?;
+            .ok_or_else(|| anyhow!(
+                "Invalid .imd file: No header terminator (0x1A) found. The file may be corrupted or not in ImageDisk format."
+            ))?;
         let header = String::from_utf8_lossy(&self.data[..header_end]);
         output.push(format!("Header: {}", header));
 
