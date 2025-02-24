@@ -37,7 +37,7 @@ test_conversion() {
     [ -f $out_img ] || exit 1
     actual_size=$(wc -c < $out_img | tr -d ' ')
     [ $actual_size -eq $expected_size ] || { echo "Size mismatch: $actual_size != $expected_size"; exit 1; }
-    cmp $img $out_img && echo "    OK: Matches reference .img"
+    cmp $img $out_img && echo "    OK: Matches reference .img" || { echo "    FAIL: Reference .img differs"; exit 1; }
 
     echo "  .img -> .imd (no meta)"
     $BIN --input $img convert --format imd --output $out_imd --geometry $geometry --validate
