@@ -120,7 +120,10 @@ fn main() -> Result<()> {
             let target: Box<dyn FormatHandler> = match format.as_str() {
                 "img" => Box::new(formats::img::IMGHandler::new(Vec::new())),
                 "imd" => Box::new(formats::imd::IMDHandler::new(Vec::new())),
-                _ => return Err(anyhow!("Unknown target format: {}", format)),
+                _ => return Err(anyhow!(
+                    "Unknown target format '{}'. Use --format with 'img' or 'imd' (e.g., 'floppytool --input file.imd convert --format img --output out.img').",
+                    format
+                )),
             };
             let effective_geometry = match geometry.clone() {
                 Geometry::Auto => handler.geometry()?.unwrap_or(Geometry::Manual {
