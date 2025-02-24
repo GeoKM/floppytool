@@ -46,7 +46,7 @@ test_conversion() {
     echo "  Roundtrip: .imd -> .img -> .imd"
     $BIN --input $imd convert --format img --output $out_img --validate
     $BIN --input $out_img convert --format imd --output $out_imd --geometry $geometry --imdmeta $meta --validate
-    cmp $imd $out_imd && echo "    OK: Roundtrip matches original"
+    cmp $imd $out_imd && echo "    OK: Roundtrip matches original" || { echo "    FAIL: Roundtrip differs"; exit 1; }
 }
 
 test_conversion 360k 40,2,9,512,4   # 5.25-inch DD, 250 kbps
