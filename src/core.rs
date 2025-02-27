@@ -1,7 +1,7 @@
 // src/core.rs
 use crate::disk_formats::DiskFormat;
 use anyhow::{Result, anyhow};
-use std::io::{Write, Cursor, Read}; // Added Read
+use std::io::{Write, Cursor, Read};
 use byteorder::ReadBytesExt;
 
 pub fn display(data: &[u8], format: &DiskFormat, ascii: bool) -> Result<String> {
@@ -34,11 +34,13 @@ pub fn display(data: &[u8], format: &DiskFormat, ascii: bool) -> Result<String> 
     Ok(output.join("\n"))
 }
 
-pub fn convert_to_raw(data: &[u8], format: &DiskFormat, verbose: bool) -> Result<Vec<u8>> {
+pub fn convert_to_raw(data: &[u8], format: &DiskFormat, verbose: bool, is_imd: bool) -> Result<Vec<u8>> {
     let expected_size = format.total_size();
     let mut raw_data = Vec::with_capacity(expected_size);
 
-    if let Some(header_end) = data.iter().position(|&b| b == 0x1A) {
+    if is_imd {
+        let header_end = data.iter().position(|&b| b == 0x1A)
+            .ok_or_else(|| anyhow!("Invalid .imd file: No header terminator (0x1A) found."))?;
         let mut cursor = Cursor::new(&data[header_end + 1..]);
         let mut total_sectors = 0;
         let mut total_compressed = 0;
@@ -49,7 +51,15 @@ pub fn convert_to_raw(data: &[u8], format: &DiskFormat, verbose: bool) -> Result
             let head = cursor.read_u8()?;
             let sector_count = cursor.read_u8()?;
             let sector_size_code = cursor.read_u8()?;
-            let sector_size = 128 << sector_size_code;
+            let sector_size = match sector_size_code {
+                0 => 128,
+                1 => 256,
+                2 => 512,
+                3 => 1024,
+                4 => 2048,
+                5 => 4096,
+                _ => return Err(anyhow!("Invalid sector size code: {}", sector_size_code)),
+            };
 
             let mut sector_ids = Vec::new();
             for _ in 0..sector_count {
@@ -99,6 +109,7 @@ pub fn convert_to_raw(data: &[u8], format: &DiskFormat, verbose: bool) -> Result
             println!("Total sectors: {}, Compressed sectors: {}", total_sectors, total_compressed);
         }
     } else {
+        // Raw data (e.g., .img)
         if data.len() != expected_size {
             return Err(anyhow!(
                 "Data size {} bytes does not match expected {} bytes for geometry {}",

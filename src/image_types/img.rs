@@ -39,41 +39,7 @@ impl FormatHandler for IMGHandler {
                 _ => *self.infer_geometry()?,
             };
 
-            let expected_size = format.total_size();
-            if expected_size != self.data.len() {
-                return Err(anyhow!(
-                    "Geometry {}x{}x{}x{} ({} bytes) does not match file size ({} bytes)",
-                    format.cylinders, format.heads, format.sectors_per_track, format.sector_size, expected_size, self.data.len()
-                ));
-            }
-
-            let mut raw_data = Vec::new();
-            raw_data.extend(b"IMD 1.18 - floppytool\n\x1A");
-
-            let mut pos = 0;
-            for cyl in 0..format.cylinders {
-                for head in 0..format.heads {
-                    raw_data.push(format.mode);
-                    raw_data.push(cyl);
-                    raw_data.push(head);
-                    raw_data.push(format.sectors_per_track);
-                    raw_data.push(match format.sector_size { 128 => 0, 256 => 1, 512 => 2, 1024 => 3, 2048 => 4, 4096 => 5, _ => 2 });
-                    for s in 1..=format.sectors_per_track { raw_data.push(s); }
-
-                    for _ in 0..format.sectors_per_track {
-                        let chunk = &self.data[pos..pos + format.sector_size as usize];
-                        if chunk.iter().all(|&b| b == chunk[0]) {
-                            raw_data.push(2); // Compressed
-                            raw_data.push(chunk[0]);
-                        } else {
-                            raw_data.push(1); // Normal data
-                            raw_data.extend_from_slice(chunk);
-                        }
-                        pos += format.sector_size as usize;
-                    }
-                }
-            }
-
+            let raw_data = crate::core::convert_to_raw(&self.data, &format, verbose, false)?; // is_imd: false
             let mut file = File::create(output_path)?;
             file.write_all(&raw_data)?;
 

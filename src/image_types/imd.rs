@@ -3,7 +3,7 @@ use crate::{FormatHandler, Geometry};
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 use std::fs::File;
-use std::io::{Write, Cursor}; // Added Cursor
+use std::io::{Write, Cursor};
 use byteorder::ReadBytesExt;
 use crate::disk_formats::DiskFormat;
 
@@ -74,7 +74,7 @@ impl FormatHandler for IMDHandler {
     fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, input_path: &PathBuf, meta_path: Option<&PathBuf>, _geometry: Option<Geometry>, verbose: bool, _validate: bool) -> Result<()> {
         if target.data().len() == 0 { // IMG conversion
             let format = self.analyze_geometry()?;
-            let raw_data = crate::core::convert_to_raw(&self.data, &format, verbose)?;
+            let raw_data = crate::core::convert_to_raw(&self.data, &format, verbose, true)?; // is_imd: true
 
             let mut file = File::create(output_path)?;
             file.write_all(&raw_data)?;
