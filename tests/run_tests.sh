@@ -49,10 +49,18 @@ test_conversion() {
     cmp $imd $out_imd && echo "    OK: Roundtrip matches original" || { echo "    FAIL: Roundtrip differs"; exit 1; }
 }
 
+test_scp() {
+    local scp=$TEST_DIR/1.44M/1.44M.scp
+    echo "Testing .scp display..."
+    $BIN --input $scp display > $TEMP_DIR/scp_display.txt
+    grep "SuperCard Pro Image" $TEMP_DIR/scp_display.txt && echo "    OK: Display header parsed" || { echo "    FAIL: Header parsing failed"; exit 1; }
+}
+
 test_conversion 360k 40,2,9,512,4   # 5.25-inch DD, 250 kbps
 test_conversion 720k 80,2,9,512,5   # 3.5-inch DD, 500 kbps (should be 250 kbps)
 test_conversion 1.2M 80,2,15,512,3  # 5.25-inch HD, 500 kbps
 test_conversion 1.44M 80,2,18,512,3 # 3.5-inch HD, 500 kbps (should be mode 5)
+test_scp
 
 echo "Cleaning up..."
 rm -rf $TEMP_DIR
