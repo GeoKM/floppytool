@@ -24,7 +24,7 @@ pub const IBM_720K: DiskFormat = DiskFormat {
     heads: 2,
     sectors_per_track: 9,
     sector_size: 512,
-    mode: 4, // Note: Often listed as 5 in tools, but technically 250kbps
+    mode: 4,
     name: "720K 3.5\" DD",
 };
 

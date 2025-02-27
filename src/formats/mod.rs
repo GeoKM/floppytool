@@ -1,3 +1,5 @@
+// src/formats/mod.rs
+
 pub mod imd {
     include!("../image_types/imd.rs");
 }
