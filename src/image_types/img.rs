@@ -39,19 +39,19 @@ impl FormatHandler for IMGHandler {
                 _ => *self.infer_geometry()?,
             };
 
-            let raw_data = crate::core::convert_to_raw(&self.data, &format, verbose, false)?; // is_imd: false
+            let imd_data = crate::core::convert_to_imd(&self.data, &format, verbose)?; // Changed to convert_to_imd
             let mut file = File::create(output_path)?;
-            file.write_all(&raw_data)?;
+            file.write_all(&imd_data)?;
 
             if verbose {
-                println!("Converted IMG to IMD: {} bytes written", raw_data.len());
+                println!("Converted IMG to IMD: {} bytes written", imd_data.len());
             }
             if validate {
                 let mut output_file = File::open(output_path)?;
                 let mut output_data = Vec::new();
                 output_file.read_to_end(&mut output_data)?;
-                if output_data.len() != raw_data.len() {
-                    return Err(anyhow!("Validation failed: Output size {} does not match written size {}", output_data.len(), raw_data.len()));
+                if output_data.len() != imd_data.len() {
+                    return Err(anyhow!("Validation failed: Output size {} does not match written size {}", output_data.len(), imd_data.len()));
                 }
                 println!("Validation passed: Output matches written data");
             }

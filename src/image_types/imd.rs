@@ -74,7 +74,7 @@ impl FormatHandler for IMDHandler {
     fn convert(&self, target: &dyn FormatHandler, output_path: &PathBuf, input_path: &PathBuf, meta_path: Option<&PathBuf>, _geometry: Option<Geometry>, verbose: bool, _validate: bool) -> Result<()> {
         if target.data().len() == 0 { // IMG conversion
             let format = self.analyze_geometry()?;
-            let raw_data = crate::core::convert_to_raw(&self.data, &format, verbose, true)?; // is_imd: true
+            let raw_data = crate::core::convert_to_img(&self.data, &format, verbose, true)?; // Changed to convert_to_img
 
             let mut file = File::create(output_path)?;
             file.write_all(&raw_data)?;
