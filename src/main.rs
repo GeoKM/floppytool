@@ -1,3 +1,4 @@
+// src/main.rs
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use std::fs::File;
@@ -112,7 +113,7 @@ enum Geometry {
 impl Geometry {
     fn cylinders(&self) -> u8 {
         match self {
-            Geometry::Auto => 0, // Not used in this context
+            Geometry::Auto => 0,
             Geometry::Manual { cylinders, .. } => *cylinders,
         }
     }
@@ -128,6 +129,8 @@ impl Geometry {
 }
 
 mod formats;
+mod disk_formats;
+mod core; // Added this line
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
